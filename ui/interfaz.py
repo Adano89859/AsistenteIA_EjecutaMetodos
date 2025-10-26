@@ -56,7 +56,7 @@ def construir_interfaz(asistente):
 
                 # ✅ NUEVO: CONTROL DE PROFUNDIDAD DE BÚSQUEDA
                 profundidad_busqueda = gr.Slider(
-                    minimum=1,
+                    minimum=0,
                     maximum=5,
                     value=2,  # Valor por defecto
                     step=1,

@@ -236,9 +236,11 @@ class AsistenteIA:
             if termino_busqueda:
                 print(f"🎯 EJECUTANDO BÚSQUEDA ESPECÍFICA: '{termino_busqueda}'")
                 ruta = self._obtener_ruta_inteligente(mensaje_usuario)
+                print(f"1-🎯 RUTA PARA BÚSQUEDA ESPECÍFICA: '{ruta}'")
                 resultado_herramienta = self.explorador_archivos.obtener_estructura_carpetas(
                     ruta, termino_busqueda, profundidad
                 )
+                print(f"2-🎯 RESULTADO HERRAMIENTA BÚSQUEDA ESPECÍFICA: '{resultado_herramienta}'")
                 tipo_busqueda = "BÚSQUEDA ESPECÍFICA"
             else:
                 print("📊 EJECUTANDO EXPLORACIÓN COMPLETA")

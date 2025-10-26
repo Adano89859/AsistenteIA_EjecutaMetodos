@@ -90,35 +90,31 @@ class ExploradorArchivos:
                 if nivel > profundidad_maxima:
                     continue
 
-                # ✅ LIMITAR SUBDIRECTORIOS SI ESTAMOS EN EL LÍMITE
-                if nivel == profundidad_maxima:
-                    directorios.clear()
-
                 # ✅ BUSCAR CARPETAS QUE COINCIDAN
                 for carpeta in directorios:
                     if termino_busqueda.lower() in carpeta.lower():
                         estadisticas['total_coincidencias'] += 1
-                        estadisticas['coincidencias_detalladas'].append({
+                        print(estadisticas['coincidencias_detalladas'].append({
                             'tipo': 'carpeta',
                             'nombre': carpeta,
                             'ruta': ruta_relativa,
                             'nivel': nivel,
                             'ruta_completa': os.path.join(raiz, carpeta)
-                        })
+                        }))
 
                 # ✅ BUSCAR ARCHIVOS QUE COINCIDAN
                 for archivo in archivos:
                     if termino_busqueda.lower() in archivo.lower():
                         estadisticas['total_coincidencias'] += 1
                         extension = os.path.splitext(archivo)[1].lower()
-                        estadisticas['coincidencias_detalladas'].append({
+                        print(estadisticas['coincidencias_detalladas'].append({
                             'tipo': 'archivo',
                             'nombre': archivo,
                             'extension': extension,
                             'ruta': ruta_relativa,
                             'nivel': nivel,
                             'ruta_completa': os.path.join(raiz, archivo)
-                        })
+                        }))
 
             # ✅ GENERAR REPORTE ESPECÍFICO PARA BÚSQUEDA
             return ExploradorArchivos._generar_reporte_busqueda(estadisticas)
@@ -284,24 +280,6 @@ class ExploradorArchivos:
 • Archivos encontrados: {estadisticas['total_archivos']:,}
 """
 
-        # ✅ MOSTRAR CONTENIDO DEL DIRECTORIO RAÍZ
-        if 'estructura' in estadisticas and estadisticas['estructura']['raiz']:
-            raiz = estadisticas['estructura']['raiz']
-            reporte += f"\n📂 **CONTENIDO DEL DIRECTORIO RAÍZ:**"
-
-            # Mostrar carpetas del directorio raíz
-            for carpeta in raiz['carpetas']:
-                reporte += f"\n• 📁 {carpeta}/"
-
-            # Mostrar archivos del directorio raíz
-            for archivo in raiz['archivos']:
-                extension = os.path.splitext(archivo)[1].lower()
-                icono = ExploradorArchivos._obtener_icono_archivo(extension)
-                reporte += f"\n• {icono} {archivo}"
-
-            if len(raiz['carpetas']) > 10 or len(raiz['archivos']) > 10:
-                reporte += f"\n• ... y otros {max(0, len(raiz['carpetas']) - 10) + max(0, len(raiz['archivos']) - 10)} elementos más"
-
         # ✅ INFORMACIÓN DE SUBDIRECTORIOS (RECURSIVO)
         if 'estructura' in estadisticas and estadisticas['estructura']['subdirectorios']:
             reporte += f"\n\n📂 **INFORMACIÓN DE SUBDIRECTORIOS:**"
@@ -333,22 +311,13 @@ class ExploradorArchivos:
         if buscar_nombre and estadisticas['coincidencias']:
             reporte += f"\n\n🎯 **BÚSQUEDA: '{buscar_nombre.upper()}' - RESULTADOS:**"
 
-            # Separar por ubicación (raíz vs subdirectorios)
-            coincidencias_raiz = [c for c in estadisticas['coincidencias'] if c['nivel'] == 0]
-            coincidencias_subniveles = [c for c in estadisticas['coincidencias'] if c['nivel'] > 0]
-
-            # Mostrar coincidencias en directorio raíz
-            if coincidencias_raiz:
-                reporte += f"\n\n📍 **EN DIRECTORIO RAÍZ:**"
-                for coinci in coincidencias_raiz:
-                    icono = "📁" if coinci['tipo'].startswith('carpeta') else ExploradorArchivos._obtener_icono_archivo(
-                        os.path.splitext(coinci['nombre'])[1])
-                    reporte += f"\n• {icono} {coinci['nombre']}"
+            # Separar por nivel
+            coincidencias_niveles = [c for c in estadisticas['coincidencias']]
 
             # Mostrar coincidencias en subdirectorios - AHORA CON RUTA COMPLETA
-            if coincidencias_subniveles:
-                reporte += f"\n\n📂 **EN SUBDIRECTORIOS:**"
-                for coinci in coincidencias_subniveles:
+            if coincidencias_niveles:
+                reporte += f"\n\n📂 **EN NIVELES:**"
+                for coinci in coincidencias_niveles:
                     icono = "📁" if coinci['tipo'].startswith(
                         'carpeta') else ExploradorArchivos._obtener_icono_archivo(
                         os.path.splitext(coinci['nombre'])[1])
@@ -357,11 +326,6 @@ class ExploradorArchivos:
                         reporte += f"\n• {icono} {coinci['ruta']}/{coinci['nombre']}"
                     else:
                         reporte += f"\n• {icono} {coinci['nombre']}"
-
-            # Resumen de búsqueda
-            total_coincidencias = len(coincidencias_raiz) + len(coincidencias_subniveles)
-            if total_coincidencias > 15:  # Si hay muchas coincidencias
-                reporte += f"\n• ... y {total_coincidencias - 15} resultados más"
 
         # ✅ MANTENER: TIPOS DE ARCHIVOS PRINCIPALES (esta parte sigue igual)
         if estadisticas['archivos_por_tipo']:
