@@ -1,0 +1,12 @@
+{
+  "ollama_url": "http://localhost:11434/api/generate",
+  "ollama_model": "llama3.1:8b",
+  "voz_activada": true,
+  "microfono_activado": true,
+  "personalidad_actual": "Asistente Neutral",
+  "config_voz": {
+    "velocidad": 170,
+    "volumen": 0.9,
+    "tono": 0
+  }
+}

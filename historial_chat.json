@@ -1,0 +1,10 @@
+[
+  {
+    "role": "system",
+    "content": "Eres un asistente útil y amable que responde de forma clara y directa."
+  },
+  {
+    "role": "user",
+    "content": "Hola."
+  }
+]
