@@ -4,6 +4,7 @@ import time
 import threading
 import multiprocessing
 import speech_recognition as sr
+import re  # ✅ NUEVO: Para extraer términos de búsqueda
 
 from config.config_manager import ConfigManager
 from core.gestor_modelos import GestorModelos
@@ -35,6 +36,45 @@ class AsistenteIA:
         self.config_voz = self.config["config_voz"]
         self.descarga_activa = False
         self.app_cerrando = False
+
+    # ✅ NUEVO: Método para extraer términos de búsqueda
+    def _extraer_termino_busqueda(self, mensaje):
+        """Extrae términos de búsqueda específicos del mensaje del usuario"""
+        mensaje_lower = mensaje.lower().strip()
+
+        print(f"🔍 Analizando mensaje para extraer búsqueda: '{mensaje}'")
+
+        # Patrones de búsqueda comunes
+        patrones = [
+            r'carpeta que se llame\s+["\']?([^"\'\?]+)["\']?',
+            r'archivo que se llame\s+["\']?([^"\'\?]+)["\']?',
+            r'buscar\s+["\']?([^"\'\?]+)["\']?',
+            r'[\'"]([^\'"]+)[\'"]',  # Texto entre comillas
+            r'que se llama\s+([^\?\.,!]+)',  # "que se llama X"
+            r'llamad[ao]\s+([^\?\.,!]+)',  # "llamada X" o "llamado X"
+        ]
+
+        for patron in patrones:
+            match = re.search(patron, mensaje_lower)
+            if match:
+                termino = match.group(1).strip()
+                if termino and len(termino) > 1:  # Evitar términos muy cortos
+                    print(f"🎯 Término de búsqueda extraído: '{termino}'")
+                    return termino
+
+        # Fallback: buscar palabras después de "llame" o "llama"
+        palabras_clave = ["llame", "llama", "llamada", "llamado", "buscar", "encuentra"]
+        palabras = mensaje_lower.split()
+
+        for i, palabra in enumerate(palabras):
+            if palabra in palabras_clave and i + 1 < len(palabras):
+                termino = palabras[i + 1].strip('?.,!\"\'')
+                if termino and len(termino) > 1:
+                    print(f"🎯 Término de búsqueda (fallback): '{termino}'")
+                    return termino
+
+        print("🔍 No se extrajo término de búsqueda específico")
+        return None
 
     # ==================== SISTEMA SIMPLIFICADO ====================
 
@@ -167,7 +207,7 @@ class AsistenteIA:
     # ==================== SISTEMA PRINCIPAL MEJORADO ====================
 
     def generar_respuesta_ollama(self, mensaje_usuario, forzar_explorador=False, profundidad=2):
-        """Genera respuesta - Puede forzar el uso del explorador mediante el botón"""
+        """Genera respuesta con búsqueda INTELIGENTE"""
         if self.app_cerrando:
             return "❌ Aplicación cerrándose..."
 
@@ -176,50 +216,73 @@ class AsistenteIA:
         if not self.gestor_modelos.verificar_modelo_instalado(modelo_actual):
             return f"❌ {modelo_actual} no instalado. Usa el botón 'Descargar Modelo'."
 
-        # DECISIÓN MODIFICADA: Solo usar explorador si se fuerza manualmente
+        # DECISIÓN: Solo usar explorador si se fuerza manualmente
         usar_herramienta = forzar_explorador
 
         contexto_herramienta = ""
-        if usar_herramienta:
-            print("🛠️ Obteniendo información COMPLETA del sistema (activación manual)...")
+        termino_busqueda = None
 
-            # Primero determinar DÓNDE buscar
+        if usar_herramienta:
+            print("🛠️ Obteniendo información del sistema (activación manual)...")
+
+            # ✅ PRIMERO: Extraer término de búsqueda si existe
+            termino_busqueda = self._extraer_termino_busqueda(mensaje_usuario)
+
+            # Determinar DÓNDE buscar
             ubicacion = self._debe_usar_herramienta_archivos(mensaje_usuario)
             print(f"📍 Buscando en: {ubicacion}")
 
-            # ✅ CORREGIDO: Pasar la profundidad al ejecutar el explorador
-            resultado_herramienta = self._ejecutar_explorador_completo(mensaje_usuario, profundidad)
+            # ✅ DECIDIR: ¿Búsqueda específica o exploración completa?
+            if termino_busqueda:
+                print(f"🎯 EJECUTANDO BÚSQUEDA ESPECÍFICA: '{termino_busqueda}'")
+                ruta = self._obtener_ruta_inteligente(mensaje_usuario)
+                resultado_herramienta = self.explorador_archivos.obtener_estructura_carpetas(
+                    ruta, termino_busqueda, profundidad
+                )
+                tipo_busqueda = "BÚSQUEDA ESPECÍFICA"
+            else:
+                print("📊 EJECUTANDO EXPLORACIÓN COMPLETA")
+                resultado_herramienta = self._ejecutar_explorador_completo(mensaje_usuario, profundidad)
+                tipo_busqueda = "EXPLORACIÓN COMPLETA"
 
             contexto_herramienta = f"""
 
-    INFORMACIÓN COMPLETA DEL SISTEMA DE ARCHIVOS (Ubicación: {ubicacion}, Profundidad: {profundidad} niveles):
-    {resultado_herramienta}
+INFORMACIÓN DEL SISTEMA ({tipo_busqueda}):
+Ubicación: {ubicacion}
+Profundidad: {profundidad} niveles
+{termino_busqueda and f"Término buscado: '{termino_busqueda}'" or ""}
 
-    BASÁNDOTE en esta información completa del sistema, analiza y responde a la pregunta del usuario.
-    La información incluye estadísticas, ejemplos de archivos/carpetas, y cualquier coincidencia relevante.
-    """
+RESULTADO:
+{resultado_herramienta}
 
-        # PREPARAR PROMPT FINAL (igual que antes)
+INSTRUCCIONES ESPECÍFICAS:
+1. Analiza METICULOSAMENTE la información proporcionada
+2. Responde DIRECTAMENTE a la pregunta del usuario
+3. Si hay resultados de búsqueda, menciónalos EXPLÍCITAMENTE
+4. Si no hay resultados, indica claramente "No se encontró"
+5. Sé PRECISO con nombres y ubicaciones
+
+PREGUNTA DEL USUARIO: {mensaje_usuario}
+
+RESPUESTA BASADA EN LOS DATOS:
+"""
+
+        # PREPARAR PROMPT FINAL
         personalidades = self.config_manager.obtener_personalidades()
         timeout = self.config_manager.obtener_modelos_compatibles().get(modelo_actual, {}).get("timeout", 300)
 
         prompt = f"""
-    {personalidades[self.personalidad_actual]['prompt']}
-    {contexto_herramienta}
+{personalidades[self.personalidad_actual]['prompt']}
+{contexto_herramienta}
 
-    PREGUNTA DEL USUARIO: {mensaje_usuario}
+PREGUNTA DEL USUARIO: {mensaje_usuario}
 
-    INSTRUCCIONES:
-    1. Si hay información del sistema arriba, ANALÍZALA COMPLETAMENTE y responde basándote en ella
-    2. Si no hay información del sistema, responde normalmente
-    3. Para preguntas sobre archivos/carpetas, USA los datos específicos de la información del sistema
-    4. Sé preciso con números y nombres cuando uses la información del sistema
-
-    RESPUESTA:
-    """
+RESPUESTA:
+"""
 
         print(f"🧠 Enviando a {modelo_actual}...")
-        print(f"📝 Información del sistema: {'SÍ (manual)' if usar_herramienta else 'NO'}")
+        print(
+            f"📝 Información del sistema: {'SÍ (búsqueda)' if termino_busqueda else 'SÍ (completa)' if usar_herramienta else 'NO'}")
 
         try:
             start_time = time.time()
@@ -250,7 +313,10 @@ class AsistenteIA:
                     print(f"✅ Respuesta en {elapsed_time:.1f}s")
                     # Añadir indicador contextual
                     if usar_herramienta:
-                        respuesta = f"🔍 (Analizando sistema de archivos - Ubicación: {self.contexto_conversacion['ultima_ruta']}, Profundidad: {profundidad} niveles)\n{respuesta}"
+                        if termino_busqueda:
+                            respuesta = f"🔍 (Búsqueda: '{termino_busqueda}' en {ubicacion}, Profundidad: {profundidad})\n{respuesta}"
+                        else:
+                            respuesta = f"🔍 (Explorando: {ubicacion}, Profundidad: {profundidad})\n{respuesta}"
                     return respuesta
                 else:
                     return "❌ Respuesta vacía"
@@ -265,18 +331,11 @@ class AsistenteIA:
         except Exception as e:
             return f"❌ Error: {str(e)}"
 
-    # ✅ CORREGIDO: Método actualizado para aceptar profundidad
+    # ✅ MANTENER los métodos existentes
     def activar_explorador_archivos(self, mensaje_usuario, profundidad=2):
-        """Activa manualmente el explorador de archivos para la consulta actual"""
-        print(f"🔧 Activación manual del explorador de archivos - Profundidad: {profundidad}")
-
-        # Guardar la profundidad actual
+        """Activa manualmente el explorador de archivos"""
+        print(f"🔧 Activación manual del explorador - Profundidad: {profundidad}")
         self.profundidad_actual = profundidad
-
-        # Determinar dónde buscar
-        ubicacion = self._debe_usar_herramienta_archivos(mensaje_usuario)
-
-        # Generar respuesta forzando el explorador CON PROFUNDIDAD
         return self.generar_respuesta_ollama(mensaje_usuario, forzar_explorador=True, profundidad=profundidad)
 
     # ==================== MÉTODOS EXISTENTES (MANTENIDOS) ====================
