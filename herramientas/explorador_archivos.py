@@ -7,7 +7,7 @@ class ExploradorArchivos:
     """Sistema OPTIMIZADO para explorar archivos usando PYTHON PURO"""
 
     @staticmethod
-    def obtener_estructura_carpetas(ruta_inicio=None, buscar_nombre=None, profundidad_maxima=3):
+    def obtener_estructura_carpetas(ruta_inicio=None, buscar_nombre=None, profundidad_maxima=3, modo_fallback=False):
         """Obtiene estructura con control de profundidad Y búsqueda inteligente"""
         try:
             # 1. OBTENER RUTA REAL DEL USUARIO
@@ -58,14 +58,28 @@ class ExploradorArchivos:
 
             print(f"🔍 Explorando con PYTHON: {ruta_real} - Profundidad: {profundidad_maxima}")
 
-            # ✅ NUEVO: Diferencia entre exploración completa y búsqueda específica
-            if buscar_nombre:
+            # ✅ NUEVA ESTRATEGIA: Búsqueda específica primero, luego general como fallback
+            if buscar_nombre and not modo_fallback:
                 print(f"🎯 BÚSQUEDA ACTIVADA: '{buscar_nombre}'")
-                return ExploradorArchivos._explorar_con_busqueda_especifica(ruta_real, buscar_nombre,
-                                                                            profundidad_maxima)
+                resultado_busqueda = ExploradorArchivos._explorar_con_busqueda_especifica(
+                    ruta_real, buscar_nombre, profundidad_maxima)
+
+                # ✅ VERIFICAR SI HUBO COINCIDENCIAS
+                if "No se encontraron coincidencias" in resultado_busqueda or "Total de coincidencias: 0" in resultado_busqueda:
+                    print("🔄 Búsqueda específica sin resultados - Activando modo fallback")
+                    # En modo fallback, ejecutamos exploración completa pero indicando que fue por fallback
+                    resultado_general = ExploradorArchivos._explorar_con_python(
+                        ruta_real, None, profundidad_maxima, es_fallback=True, termino_buscado=buscar_nombre)
+                    return resultado_general
+                else:
+                    return resultado_busqueda
             else:
-                print("📊 EXPLORACIÓN COMPLETA (sin búsqueda específica)")
-                return ExploradorArchivos._explorar_con_python(ruta_real, None, profundidad_maxima)
+                if modo_fallback:
+                    print("📊 EXPLORACIÓN COMPLETA (modo fallback activado)")
+                else:
+                    print("📊 EXPLORACIÓN COMPLETA (sin búsqueda específica)")
+                return ExploradorArchivos._explorar_con_python(ruta_real, None, profundidad_maxima,
+                                                               es_fallback=modo_fallback)
 
         except Exception as e:
             return f"❌ Error: {str(e)}"
@@ -94,27 +108,27 @@ class ExploradorArchivos:
                 for carpeta in directorios:
                     if termino_busqueda.lower() in carpeta.lower():
                         estadisticas['total_coincidencias'] += 1
-                        print(estadisticas['coincidencias_detalladas'].append({
+                        estadisticas['coincidencias_detalladas'].append({
                             'tipo': 'carpeta',
                             'nombre': carpeta,
                             'ruta': ruta_relativa,
                             'nivel': nivel,
                             'ruta_completa': os.path.join(raiz, carpeta)
-                        }))
+                        })
 
                 # ✅ BUSCAR ARCHIVOS QUE COINCIDAN
                 for archivo in archivos:
                     if termino_busqueda.lower() in archivo.lower():
                         estadisticas['total_coincidencias'] += 1
                         extension = os.path.splitext(archivo)[1].lower()
-                        print(estadisticas['coincidencias_detalladas'].append({
+                        estadisticas['coincidencias_detalladas'].append({
                             'tipo': 'archivo',
                             'nombre': archivo,
                             'extension': extension,
                             'ruta': ruta_relativa,
                             'nivel': nivel,
                             'ruta_completa': os.path.join(raiz, archivo)
-                        }))
+                        })
 
             # ✅ GENERAR REPORTE ESPECÍFICO PARA BÚSQUEDA
             return ExploradorArchivos._generar_reporte_busqueda(estadisticas)
@@ -179,7 +193,7 @@ class ExploradorArchivos:
         return reporte
 
     @staticmethod
-    def _explorar_con_python(ruta_absoluta, buscar_nombre, profundidad_maxima):
+    def _explorar_con_python(ruta_absoluta, buscar_nombre, profundidad_maxima, es_fallback=False, termino_buscado=None):
         """Exploración que RESPETA la profundidad máxima"""
         estadisticas = {
             'total_archivos': 0,
@@ -194,7 +208,9 @@ class ExploradorArchivos:
             },
             'coincidencias': [],
             'carpeta_raiz': os.path.basename(ruta_absoluta),
-            'profundidad_maxima': profundidad_maxima
+            'profundidad_maxima': profundidad_maxima,
+            'es_fallback': es_fallback,
+            'termino_buscado': termino_buscado
         }
 
         try:
@@ -213,20 +229,18 @@ class ExploradorArchivos:
                 estadisticas['total_carpetas'] += 1
                 estadisticas['total_archivos'] += len(archivos)
 
-                # ✅ DIFERENCIAR POR NIVEL
-                if nivel == 0:  # DIRECTORIO RAÍZ
-                    # Carpeta raíz
+                # ✅ CAPTURAR INFORMACIÓN PARA TODOS LOS NIVELES (INCLUYENDO RAÍZ COMO "SUBDIRECTORIO")
+                if ruta_relativa not in estadisticas['estructura']['subdirectorios']:
+                    estadisticas['estructura']['subdirectorios'][ruta_relativa] = {
+                        'nivel': nivel,
+                        'carpetas': directorios.copy(),  # Usar copia para evitar modificación
+                        'archivos': archivos.copy()
+                    }
+
+                # ✅ MANTENER ESTRUCTURA ORIGINAL PARA COMPATIBILIDAD
+                if nivel == 0:
                     estadisticas['estructura']['raiz']['carpetas'] = directorios
                     estadisticas['estructura']['raiz']['archivos'] = archivos
-
-                else:  # SUBDIRECTORIOS
-                    # Guardar información del subdirectorio actual
-                    if ruta_relativa not in estadisticas['estructura']['subdirectorios']:
-                        estadisticas['estructura']['subdirectorios'][ruta_relativa] = {
-                            'nivel': nivel,
-                            'carpetas': directorios,
-                            'archivos': archivos
-                        }
 
                 # Procesar archivos manteniendo información del nivel
                 for archivo in archivos:
@@ -260,8 +274,9 @@ class ExploradorArchivos:
                         })
 
             # Esta parte es para yo ver la información por terminal
-            print(ExploradorArchivos._generar_reporte_inteligente(ruta_absoluta, estadisticas, buscar_nombre))
-            return ExploradorArchivos._generar_reporte_inteligente(ruta_absoluta, estadisticas, buscar_nombre)
+            resultado = ExploradorArchivos._generar_reporte_inteligente(ruta_absoluta, estadisticas, buscar_nombre)
+            print(resultado)  # Para ver en terminal
+            return resultado
 
         except Exception as e:
             return f"❌ Error en exploración: {str(e)}"
@@ -269,7 +284,20 @@ class ExploradorArchivos:
     @staticmethod
     def _generar_reporte_inteligente(ruta, estadisticas, buscar_nombre):
         """Genera reporte que incluye información de profundidad"""
-        reporte = f"""
+
+        # ✅ ENCABEZADO ESPECIAL PARA MODO FALLBACK
+        if estadisticas.get('es_fallback', False) and estadisticas.get('termino_buscado'):
+            reporte = f"""
+🔄 **INFORMACIÓN GENERAL (Búsqueda Fallback)**
+🎯 Término original buscado: '{estadisticas['termino_buscado']}'
+❌ No se encontraron coincidencias específicas
+💡 Mostrando información general como referencia:
+
+"""
+        else:
+            reporte = ""
+
+        reporte += f"""
 📊 **ANÁLISIS JERÁRQUICO DEL SISTEMA DE ARCHIVOS**
 📍 **Ubicación:** {ruta}
 👤 **Usuario:** {os.getlogin()}
@@ -349,6 +377,10 @@ class ExploradorArchivos:
         reporte += f"\n• Total elementos: {estadisticas['total_carpetas'] + estadisticas['total_archivos']:,}"
         reporte += f"\n• Carpetas: {estadisticas['total_carpetas']:,}"
         reporte += f"\n• Archivos: {estadisticas['total_archivos']:,}"
+
+        # ✅ INFORMACIÓN ESPECIAL PARA FALLBACK
+        if estadisticas.get('es_fallback', False) and estadisticas.get('termino_buscado'):
+            reporte += f"\n• 🔄 Modo fallback activado: No se encontró '{estadisticas['termino_buscado']}'"
 
         if buscar_nombre:
             # Contar por tipo usando la nueva estructura
