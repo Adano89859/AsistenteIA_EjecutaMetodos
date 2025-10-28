@@ -54,9 +54,18 @@ def construir_interfaz(asistente):
                     info="Ambos modos = Respuestas sin límites"
                 )
 
+                # ✅ NUEVO: SELECTOR DE UBICACIÓN MANUAL
+                ubicacion_manual = gr.Dropdown(
+                    choices=["automático", "usuario", "escritorio", "documentos",
+                            "descargas", "imágenes", "música", "vídeos"],
+                    value="automático",
+                    label="📍 Ubicación de búsqueda",
+                    info="Dónde buscará la IA (manual anula automático)"
+                )
+
                 # ✅ NUEVO: CONTROL DE PROFUNDIDAD DE BÚSQUEDA
                 profundidad_busqueda = gr.Slider(
-                    minimum=1,
+                    minimum=0,
                     maximum=5,
                     value=2,  # Valor por defecto
                     step=1,
@@ -107,31 +116,34 @@ def construir_interfaz(asistente):
 
         # ==================== EVENT HANDLERS RÁPIDOS ====================
 
-        def enviar_mensaje(mensaje, historial, tipo_ayuda, profundidad):
+        def enviar_mensaje(mensaje, historial, tipo_ayuda, profundidad, ubicacion):
             if not mensaje.strip():
                 return "", historial
 
             historial.append([mensaje, "⏳ Procesando..."])
 
-            # ✅ PASAR LA PROFUNDIDAD AL ASISTENTE
+            # ✅ MODIFICADO: Lógica más clara
             if tipo_ayuda == "Archivos del sistema":
-                respuesta = asistente.activar_explorador_archivos(mensaje, profundidad)
+                print("🔧 Modo: Archivos del sistema - Activando explorador...")
+                respuesta = asistente.activar_explorador_archivos(mensaje, profundidad, ubicacion)
             else:  # Modo Normal
-                respuesta = asistente.generar_respuesta_ollama(mensaje)
+                print("💬 Modo: Normal - Respuesta estándar sin explorador")
+                # ✅ IMPORTANTE: NO pasar forzar_explorador=True en modo Normal
+                respuesta = asistente.generar_respuesta_ollama(mensaje, forzar_explorador=False)
 
             historial[-1] = [mensaje, respuesta]
             return "", historial
 
-        # Actualizar los handlers para incluir profundidad
+        # Actualizar los handlers para incluir profundidad y ubicación
         btn_enviar.click(
             enviar_mensaje,
-            [txt_mensaje, chatbot, tipo_ayuda_dropdown, profundidad_busqueda],
+            [txt_mensaje, chatbot, tipo_ayuda_dropdown, profundidad_busqueda, ubicacion_manual],
             [txt_mensaje, chatbot]
         )
 
         txt_mensaje.submit(
             enviar_mensaje,
-            [txt_mensaje, chatbot, tipo_ayuda_dropdown, profundidad_busqueda],
+            [txt_mensaje, chatbot, tipo_ayuda_dropdown, profundidad_busqueda, ubicacion_manual],
             [txt_mensaje, chatbot]
         )
 
@@ -176,6 +188,20 @@ def construir_interfaz(asistente):
         tipo_ayuda_dropdown.change(
             cambiar_tipo_ayuda,
             [tipo_ayuda_dropdown],
+            [progreso_descarga]
+        )
+
+        # ✅ NUEVO: Handler para cambio de ubicación manual
+        def cambiar_ubicacion_manual(ubicacion):
+            """Actualiza el estado cuando cambia la ubicación manual"""
+            if ubicacion == "automático":
+                return f"📍 Ubicación: Automático (IA decide)"
+            else:
+                return f"📍 Ubicación: {ubicacion.title()} (Manual)"
+
+        ubicacion_manual.change(
+            cambiar_ubicacion_manual,
+            [ubicacion_manual],
             [progreso_descarga]
         )
 
