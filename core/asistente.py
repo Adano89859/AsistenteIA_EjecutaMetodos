@@ -5,6 +5,7 @@ import threading
 import multiprocessing
 import speech_recognition as sr
 import re
+import psutil  # ✅ NUEVA DEPENDENCIA para métricas del sistema
 
 from config.config_manager import ConfigManager
 from core.gestor_modelos import GestorModelos
@@ -38,7 +39,167 @@ class AsistenteIA:
         self.descarga_activa = False
         self.app_cerrando = False
 
-    # ✅ NUEVO: Método para establecer ubicación manual
+    # ✅ NUEVO: Método para obtener métricas del sistema
+    def _obtener_metricas_sistema(self):
+        """Obtiene métricas completas del sistema"""
+        try:
+            # CPU
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+
+            # Memoria
+            memoria = psutil.virtual_memory()
+            memoria_percent = memoria.percent
+            memoria_used_gb = memoria.used / (1024 ** 3)
+            memoria_total_gb = memoria.total / (1024 ** 3)
+
+            # Procesos
+            procesos = len(psutil.pids())
+
+            # Disco
+            disco = psutil.disk_usage('/')
+            disco_percent = disco.percent
+            disco_used_gb = disco.used / (1024 ** 3)
+            disco_total_gb = disco.total / (1024 ** 3)
+
+            # Tiempo de actividad
+            tiempo_actividad = time.time() - psutil.boot_time()
+            horas = int(tiempo_actividad // 3600)
+            minutos = int((tiempo_actividad % 3600) // 60)
+
+            # Red (bytes enviados/recibidos)
+            red = psutil.net_io_counters()
+            red_sent_mb = red.bytes_sent / (1024 ** 2)
+            red_recv_mb = red.bytes_recv / (1024 ** 2)
+
+            # Temperatura (si está disponible)
+            try:
+                temps = psutil.sensors_temperatures()
+                if temps:
+                    temp_actual = list(temps.values())[0][0].current
+                    temperatura = f"{temp_actual}°C"
+                else:
+                    temperatura = "No disponible"
+            except:
+                temperatura = "No disponible"
+
+            metricas = {
+                "cpu": f"{cpu_percent}%",
+                "memoria": f"{memoria_percent}% ({memoria_used_gb:.1f}GB/{memoria_total_gb:.1f}GB)",
+                "procesos": f"{procesos}",
+                "disco": f"{disco_percent}% ({disco_used_gb:.1f}GB/{disco_total_gb:.1f}GB)",
+                "temperatura": temperatura,
+                "tiempo_actividad": f"{horas}h {minutos}m",
+                "red": f"▲ {red_sent_mb:.1f}MB ▼ {red_recv_mb:.1f}MB"
+            }
+
+            return metricas
+
+        except Exception as e:
+            print(f"❌ Error obteniendo métricas: {e}")
+            return {
+                "cpu": "Error",
+                "memoria": "Error",
+                "procesos": "Error",
+                "disco": "Error",
+                "temperatura": "Error",
+                "tiempo_actividad": "Error",
+                "red": "Error"
+            }
+
+    # ✅ NUEVO: Método principal para modo rendimiento
+    def obtener_rendimiento_sistema(self, mensaje_usuario):
+        """Obtiene métricas del sistema y las integra en la respuesta de la IA"""
+        print("📊 Modo Rendimiento - Obteniendo métricas del sistema...")
+
+        # Obtener métricas del sistema
+        metricas = self._obtener_metricas_sistema()
+
+        # Generar respuesta contextualizada con la IA
+        return self.generar_respuesta_ollama_con_metricas(mensaje_usuario, metricas)
+
+    # ✅ NUEVO: Método para generar respuesta con métricas
+    def generar_respuesta_ollama_con_metricas(self, mensaje_usuario, metricas):
+        """Genera respuesta integrando métricas del sistema en el contexto"""
+
+        # Construir contexto de métricas
+        contexto_metricas = f"""
+📊 **INFORMACIÓN DE RENDIMIENTO DEL SISTEMA (TIEMPO REAL):**
+
+• 🖥️ **CPU:** {metricas['cpu']} de uso
+• 🧠 **Memoria RAM:** {metricas['memoria']}
+• 🔄 **Procesos activos:** {metricas['procesos']}
+• 💾 **Disco:** {metricas['disco']}
+• 🌡️ **Temperatura:** {metricas['temperatura']}
+• ⏰ **Tiempo de actividad:** {metricas['tiempo_actividad']}
+• 📡 **Red:** {metricas['red']}
+
+**INSTRUCCIONES PARA LA IA:**
+1. Analiza estas métricas de rendimiento en tiempo real
+2. Responde la pregunta del usuario contextualizando con estos datos
+3. Si hay valores altos (CPU >80%, Memoria >85%), sugiere optimizaciones
+4. Explica el significado de las métricas relevantes para la pregunta
+5. Sé conciso pero informativo sobre el estado del sistema
+
+PREGUNTA DEL USUARIO: {mensaje_usuario}
+
+RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
+"""
+
+        modelo_actual = self.config["ollama_model"]
+        personalidades = self.config_manager.obtener_personalidades()
+        timeout = self.config_manager.obtener_modelos_compatibles().get(modelo_actual, {}).get("timeout", 300)
+
+        prompt_final = f"""
+{personalidades[self.personalidad_actual]['prompt']}
+{contexto_metricas}
+"""
+
+        print(f"🧠 Enviando a {modelo_actual} con métricas del sistema...")
+
+        try:
+            start_time = time.time()
+
+            resp = requests.post(
+                self.config["ollama_url"],
+                json={
+                    "model": modelo_actual,
+                    "prompt": prompt_final,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.7,
+                        "num_predict": 2048,
+                        "top_k": 40,
+                        "top_p": 0.9
+                    }
+                },
+                timeout=timeout
+            )
+
+            elapsed_time = time.time() - start_time
+
+            if resp.status_code == 200:
+                data = resp.json()
+                respuesta = data.get("response", "").strip()
+
+                if respuesta:
+                    print(f"✅ Respuesta con métricas en {elapsed_time:.1f}s")
+                    # Añadir indicador contextual del modo rendimiento
+                    respuesta = f"📊 (Modo Rendimiento - Métricas en tiempo real)\n{respuesta}"
+                    return respuesta
+                else:
+                    return "❌ Respuesta vacía del modelo"
+
+            else:
+                return f"❌ Error HTTP {resp.status_code} al obtener respuesta con métricas"
+
+        except requests.exceptions.Timeout:
+            return f"⏰ TIMEOUT: El modelo está procesando las métricas del sistema..."
+        except requests.exceptions.ConnectionError:
+            return "🔌 Error: Ollama no está corriendo."
+        except Exception as e:
+            return f"❌ Error procesando métricas: {str(e)}"
+
+    # ✅ MÉTODO EXISTENTE: establecer_ubicacion_manual
     def establecer_ubicacion_manual(self, ubicacion):
         """Establece una ubicación manual para la búsqueda"""
         if ubicacion == "automático":
@@ -48,7 +209,7 @@ class AsistenteIA:
             self.contexto_conversacion['ubicacion_manual'] = ubicacion
             print(f"📍 Ubicación manual establecida: {ubicacion}")
 
-    # ✅ NUEVO: Método para obtener ubicación (manual o automática)
+    # ✅ MÉTODO EXISTENTE: _obtener_ubicacion_busqueda
     def _obtener_ubicacion_busqueda(self, mensaje_usuario):
         """Obtiene la ubicación para buscar (manual prevalece sobre automático)"""
 
@@ -63,7 +224,7 @@ class AsistenteIA:
         print("📍 Modo AUTOMÁTICO: Consultando a la IA...")
         return self._debe_usar_herramienta_archivos(mensaje_usuario)
 
-    # ✅ MODIFICADO: Método para extraer términos de búsqueda
+    # ✅ MÉTODO EXISTENTE: _extraer_termino_busqueda
     def _extraer_termino_busqueda(self, mensaje):
         """Extrae términos de búsqueda específicos del mensaje del usuario"""
         mensaje_lower = mensaje.lower().strip()
