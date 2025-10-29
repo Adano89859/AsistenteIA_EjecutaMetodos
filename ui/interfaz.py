@@ -73,9 +73,9 @@ def construir_interfaz(asistente):
                     info="Niveles de subcarpetas a explorar"
                 )
 
-                # Selector de Tipo de Ayuda (MODIFICADO)
+                # ✅ MODIFICADO: Selector de Tipo de Ayuda (AHORA CON 3 OPCIONES)
                 tipo_ayuda_dropdown = gr.Dropdown(
-                    choices=["Normal", "Archivos del sistema"],
+                    choices=["Normal", "Archivos del sistema", "Rendimiento del sistema"],  # ✅ AÑADIDO
                     value="Normal",
                     label="🔧 Tipo de Ayuda",
                     info="Selecciona el modo de respuesta"
@@ -122,10 +122,13 @@ def construir_interfaz(asistente):
 
             historial.append([mensaje, "⏳ Procesando..."])
 
-            # ✅ MODIFICADO: Lógica más clara
+            # ✅ MODIFICADO: Lógica expandida para 3 modos
             if tipo_ayuda == "Archivos del sistema":
                 print("🔧 Modo: Archivos del sistema - Activando explorador...")
                 respuesta = asistente.activar_explorador_archivos(mensaje, profundidad, ubicacion)
+            elif tipo_ayuda == "Rendimiento del sistema":  # ✅ NUEVO MODO
+                print("📊 Modo: Rendimiento - Obteniendo métricas del sistema...")
+                respuesta = asistente.obtener_rendimiento_sistema(mensaje)  # ✅ NUEVO MÉTODO
             else:  # Modo Normal
                 print("💬 Modo: Normal - Respuesta estándar sin explorador")
                 # ✅ IMPORTANTE: NO pasar forzar_explorador=True en modo Normal
@@ -177,11 +180,13 @@ def construir_interfaz(asistente):
 
         btn_toggle_mic.click(toggle_mic_handler, outputs=[estado_controles])
 
-        # Cambiar tipo de ayuda - Handler
+        # ✅ MODIFICADO: Cambiar tipo de ayuda - Handler expandido
         def cambiar_tipo_ayuda(tipo_seleccionado):
             """Actualiza el estado según el tipo de ayuda seleccionado"""
             if tipo_seleccionado == "Archivos del sistema":
                 return "🔧 Modo: Archivos del sistema - La IA analizará tu sistema de archivos"
+            elif tipo_seleccionado == "Rendimiento del sistema":  # ✅ NUEVO
+                return "📊 Modo: Rendimiento - La IA analizará el rendimiento del sistema en tiempo real"
             else:
                 return "🔧 Modo: Normal - Respuesta estándar"
 
