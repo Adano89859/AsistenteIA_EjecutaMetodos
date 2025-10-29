@@ -5,11 +5,11 @@ import threading
 import multiprocessing
 import speech_recognition as sr
 import re
-import psutil  # ✅ NUEVA DEPENDENCIA para métricas del sistema
 
 from config.config_manager import ConfigManager
 from core.gestor_modelos import GestorModelos
 from herramientas.explorador_archivos import ExploradorArchivos
+from herramientas.rendimiento_sistema import MonitorRendimiento  # ✅ NUEVO IMPORT
 
 
 class AsistenteIA:
@@ -18,15 +18,15 @@ class AsistenteIA:
         self.config = self.config_manager.config
         self.gestor_modelos = GestorModelos()
         self.explorador_archivos = ExploradorArchivos()
+        self.monitor_rendimiento = MonitorRendimiento()  # ✅ NUEVA INSTANCIA
         self.inicializar_estados()
 
         # CONTEXTO SIMPLIFICADO
         self.contexto_conversacion = {
             'ultima_ruta': 'usuario',
             'historial_reciente': [],
-            'ubicacion_manual': None  # ✅ NUEVO: Estado de ubicación manual
+            'ubicacion_manual': None
         }
-        # ✅ NUEVO: Profundidad por defecto
         self.profundidad_actual = 2
 
     def inicializar_estados(self):
@@ -39,89 +39,22 @@ class AsistenteIA:
         self.descarga_activa = False
         self.app_cerrando = False
 
-    # ✅ NUEVO: Método para obtener métricas del sistema
-    def _obtener_metricas_sistema(self):
-        """Obtiene métricas completas del sistema"""
-        try:
-            # CPU
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-
-            # Memoria
-            memoria = psutil.virtual_memory()
-            memoria_percent = memoria.percent
-            memoria_used_gb = memoria.used / (1024 ** 3)
-            memoria_total_gb = memoria.total / (1024 ** 3)
-
-            # Procesos
-            procesos = len(psutil.pids())
-
-            # Disco
-            disco = psutil.disk_usage('/')
-            disco_percent = disco.percent
-            disco_used_gb = disco.used / (1024 ** 3)
-            disco_total_gb = disco.total / (1024 ** 3)
-
-            # Tiempo de actividad
-            tiempo_actividad = time.time() - psutil.boot_time()
-            horas = int(tiempo_actividad // 3600)
-            minutos = int((tiempo_actividad % 3600) // 60)
-
-            # Red (bytes enviados/recibidos)
-            red = psutil.net_io_counters()
-            red_sent_mb = red.bytes_sent / (1024 ** 2)
-            red_recv_mb = red.bytes_recv / (1024 ** 2)
-
-            # Temperatura (si está disponible)
-            try:
-                temps = psutil.sensors_temperatures()
-                if temps:
-                    temp_actual = list(temps.values())[0][0].current
-                    temperatura = f"{temp_actual}°C"
-                else:
-                    temperatura = "No disponible"
-            except:
-                temperatura = "No disponible"
-
-            metricas = {
-                "cpu": f"{cpu_percent}%",
-                "memoria": f"{memoria_percent}% ({memoria_used_gb:.1f}GB/{memoria_total_gb:.1f}GB)",
-                "procesos": f"{procesos}",
-                "disco": f"{disco_percent}% ({disco_used_gb:.1f}GB/{disco_total_gb:.1f}GB)",
-                "temperatura": temperatura,
-                "tiempo_actividad": f"{horas}h {minutos}m",
-                "red": f"▲ {red_sent_mb:.1f}MB ▼ {red_recv_mb:.1f}MB"
-            }
-
-            return metricas
-
-        except Exception as e:
-            print(f"❌ Error obteniendo métricas: {e}")
-            return {
-                "cpu": "Error",
-                "memoria": "Error",
-                "procesos": "Error",
-                "disco": "Error",
-                "temperatura": "Error",
-                "tiempo_actividad": "Error",
-                "red": "Error"
-            }
-
-    # ✅ NUEVO: Método principal para modo rendimiento
+    # ✅ MODIFICADO: Método principal para modo rendimiento (ahora usa módulo separado)
     def obtener_rendimiento_sistema(self, mensaje_usuario):
         """Obtiene métricas del sistema y las integra en la respuesta de la IA"""
         print("📊 Modo Rendimiento - Obteniendo métricas del sistema...")
 
-        # Obtener métricas del sistema
-        metricas = self._obtener_metricas_sistema()
+        # ✅ USAR MÓDULO SEPARADO para obtener métricas
+        metricas = self.monitor_rendimiento.obtener_metricas_completas()
 
         # Generar respuesta contextualizada con la IA
         return self.generar_respuesta_ollama_con_metricas(mensaje_usuario, metricas)
 
-    # ✅ NUEVO: Método para generar respuesta con métricas
+    # ✅ MÉTODO ACTUALIZADO: Para generar respuesta con métricas MEJORADO
     def generar_respuesta_ollama_con_metricas(self, mensaje_usuario, metricas):
         """Genera respuesta integrando métricas del sistema en el contexto"""
 
-        # Construir contexto de métricas
+        # Construir contexto de métricas MEJORADO con información adicional
         contexto_metricas = f"""
 📊 **INFORMACIÓN DE RENDIMIENTO DEL SISTEMA (TIEMPO REAL):**
 
@@ -132,13 +65,18 @@ class AsistenteIA:
 • 🌡️ **Temperatura:** {metricas['temperatura']}
 • ⏰ **Tiempo de actividad:** {metricas['tiempo_actividad']}
 • 📡 **Red:** {metricas['red']}
+• 💻 **Sistema:** {metricas['info_sistema'].get('sistema', 'Desconocido')} - {metricas['info_sistema'].get('arquitectura', '?')}
+• 🔢 **Núcleos:** {metricas['info_sistema'].get('nucleos_fisicos', '?')} físicos, {metricas['info_sistema'].get('nucleos_logicos', '?')} lógicos
+{'• 🔥 **Procesos destacados:** ' + ', '.join(metricas['procesos_top']) if metricas['procesos_top'] and metricas['procesos_top'][0] not in ['Error', 'Sin procesos destacados'] else ''}
 
 **INSTRUCCIONES PARA LA IA:**
 1. Analiza estas métricas de rendimiento en tiempo real
 2. Responde la pregunta del usuario contextualizando con estos datos
-3. Si hay valores altos (CPU >80%, Memoria >85%), sugiere optimizaciones
+3. Si hay valores altos (CPU >80%, Memoria >85%, Disco >90%), sugiere optimizaciones
 4. Explica el significado de las métricas relevantes para la pregunta
-5. Sé conciso pero informativo sobre el estado del sistema
+5. Si la temperatura no está disponible, explica que es normal en algunos sistemas y no indica problemas
+6. Considera la información del sistema ({metricas['info_sistema'].get('sistema', 'Desconocido')}) en tu análisis
+7. Sé conciso pero informativo sobre el estado del sistema
 
 PREGUNTA DEL USUARIO: {mensaje_usuario}
 
@@ -199,7 +137,8 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         except Exception as e:
             return f"❌ Error procesando métricas: {str(e)}"
 
-    # ✅ MÉTODO EXISTENTE: establecer_ubicacion_manual
+    # ==================== MÉTODOS EXISTENTES (SE MANTIENEN IGUAL) ====================
+
     def establecer_ubicacion_manual(self, ubicacion):
         """Establece una ubicación manual para la búsqueda"""
         if ubicacion == "automático":
@@ -209,47 +148,39 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
             self.contexto_conversacion['ubicacion_manual'] = ubicacion
             print(f"📍 Ubicación manual establecida: {ubicacion}")
 
-    # ✅ MÉTODO EXISTENTE: _obtener_ubicacion_busqueda
     def _obtener_ubicacion_busqueda(self, mensaje_usuario):
         """Obtiene la ubicación para buscar (manual prevalece sobre automático)"""
-
-        # 1. PRIMERO: Verificar si hay ubicación manual
         if self.contexto_conversacion.get('ubicacion_manual'):
             ubicacion_manual = self.contexto_conversacion['ubicacion_manual']
             print(f"📍 Usando ubicación MANUAL: {ubicacion_manual}")
             self.contexto_conversacion['ultima_ruta'] = ubicacion_manual
             return ubicacion_manual
 
-        # 2. SEGUNDO: Modo automático (IA decide)
         print("📍 Modo AUTOMÁTICO: Consultando a la IA...")
         return self._debe_usar_herramienta_archivos(mensaje_usuario)
 
-    # ✅ MÉTODO EXISTENTE: _extraer_termino_busqueda
     def _extraer_termino_busqueda(self, mensaje):
         """Extrae términos de búsqueda específicos del mensaje del usuario"""
         mensaje_lower = mensaje.lower().strip()
-
         print(f"🔍 Analizando mensaje para extraer búsqueda: '{mensaje}'")
 
-        # Patrones de búsqueda comunes
         patrones = [
             r'carpeta que se llame\s+["\']?([^"\'\?]+)["\']?',
             r'archivo que se llame\s+["\']?([^"\'\?]+)["\']?',
             r'buscar\s+["\']?([^"\'\?]+)["\']?',
-            r'[\'"]([^\'"]+)[\'"]',  # Texto entre comillas
-            r'que se llama\s+([^\?\.,!]+)',  # "que se llama X"
-            r'llamad[ao]\s+([^\?\.,!]+)',  # "llamada X" o "llamado X"
+            r'[\'"]([^\'"]+)[\'"]',
+            r'que se llama\s+([^\?\.,!]+)',
+            r'llamad[ao]\s+([^\?\.,!]+)',
         ]
 
         for patron in patrones:
             match = re.search(patron, mensaje_lower)
             if match:
                 termino = match.group(1).strip()
-                if termino and len(termino) > 1:  # Evitar términos muy cortos
+                if termino and len(termino) > 1:
                     print(f"🎯 Término de búsqueda extraído: '{termino}'")
                     return termino
 
-        # Fallback: buscar palabras después de "llame" o "llama"
         palabras_clave = ["llame", "llama", "llamada", "llamado", "buscar", "encuentra"]
         palabras = mensaje_lower.split()
 
@@ -263,12 +194,8 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         print("🔍 No se extrajo término de búsqueda específico")
         return None
 
-    # ==================== SISTEMA SIMPLIFICADO ====================
-
     def _debe_usar_herramienta_archivos(self, mensaje_usuario):
-        """SOLO determina DÓNDE buscar la información del sistema (no SI debe buscar)"""
-
-        # PROMPT MODIFICADO - Solo para determinar la ubicación
+        """SOLO determina DÓNDE buscar la información del sistema"""
         prompt_decision = f"""
     Eres un asistente que determina DÓNDE buscar en el sistema de archivos según lo que pide el usuario.
 
@@ -288,12 +215,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
     - "usuario" si menciona al usuario, a sí mismo, algo de su propiedad, o si no especifica donde buscar
 
     RESPONDE SOLO con la ubicación (una palabra)
-
-    Ejemplos:
-    - "¿Cuántos archivos tengo?" → "usuario"
-    - "¿Qué hay en documentos?" → "documentos" 
-    - "Buscar archivos en descargas" → "descargas"
-    - "Explorar mi sistema" → "ordenador"
 
     RESPUESTA:
     """
@@ -321,7 +242,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
                 ubicacion = resp.json().get("response", "").strip().lower()
                 print(f"🎯 IA indica buscar en: {ubicacion}")
 
-                # Validar y normalizar la ubicación
                 ubicaciones_validas = ['escritorio', 'documentos', 'descargas', 'imágenes', 'música', 'vídeos',
                                        'actual', 'proyecto', 'ordenador', 'usuario']
 
@@ -329,7 +249,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
                     self.contexto_conversacion['ultima_ruta'] = ubicacion
                     return ubicacion
                 else:
-                    # Fallback a ubicación por defecto
                     print(f"⚠️ Ubicación no válida '{ubicacion}', usando 'usuario' por defecto")
                     self.contexto_conversacion['ultima_ruta'] = 'usuario'
                     return 'usuario'
@@ -337,7 +256,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         except Exception as e:
             print(f"⚠️ Error consultando a la IA: {e}")
 
-        # Fallback - determinar ubicación basada en palabras clave
         return self._determinar_ubicacion_fallback(mensaje_usuario)
 
     def _determinar_ubicacion_fallback(self, mensaje_usuario):
@@ -362,7 +280,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
                     self.contexto_conversacion['ultima_ruta'] = ubicacion
                     return ubicacion
 
-        # Por defecto
         print("📍 Fallback: usando ubicación por defecto 'usuario'")
         self.contexto_conversacion['ultima_ruta'] = 'usuario'
         return 'usuario'
@@ -375,7 +292,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
 
     def _ejecutar_explorador_completo(self, mensaje_usuario, profundidad=2):
         """Ejecuta el explorador para obtener información COMPLETA del sistema"""
-        # ✅ MODIFICADO: Usar el nuevo sistema de ubicación
         ubicacion = self._obtener_ubicacion_busqueda(mensaje_usuario)
 
         print(f"🔍 Ejecutando explorador COMPLETO:")
@@ -383,23 +299,19 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         print(f"   - Profundidad: {profundidad}")
         print(f"   - Mensaje original: '{mensaje_usuario}'")
 
-        # ✅ CORREGIDO: Pasar la profundidad al explorador
         resultado = self.explorador_archivos.obtener_estructura_carpetas(
             ubicacion,
-            None,  # Sin término de búsqueda específico
-            profundidad  # ← ¡PASAR LA PROFUNDIDAD!
+            None,
+            profundidad
         )
         print(f"📊 Información del sistema obtenida ({len(resultado)} caracteres)")
         return resultado
-
-    # ==================== SISTEMA PRINCIPAL MEJORADO ====================
 
     def generar_respuesta_ollama(self, mensaje_usuario, forzar_explorador=False, profundidad=2, ubicacion_manual=None):
         """Genera respuesta con búsqueda INTELIGENTE"""
         if self.app_cerrando:
             return "❌ Aplicación cerrándose..."
 
-        # ✅ NUEVO: Establecer ubicación manual si se proporciona
         if ubicacion_manual:
             self.establecer_ubicacion_manual(ubicacion_manual)
 
@@ -408,24 +320,17 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         if not self.gestor_modelos.verificar_modelo_instalado(modelo_actual):
             return f"❌ {modelo_actual} no instalado. Usa el botón 'Descargar Modelo'."
 
-        # ✅ MODIFICADO: Lógica más clara - SOLO usar explorador si se fuerza manualmente
         usar_herramienta = forzar_explorador
-
         contexto_herramienta = ""
         termino_busqueda = None
 
-        # ✅ NUEVO: Verificación explícita - solo ejecutar explorador si está forzado
         if usar_herramienta:
             print("🛠️ Obteniendo información del sistema (activación manual)...")
 
-            # ✅ PRIMERO: Extraer término de búsqueda si existe
             termino_busqueda = self._extraer_termino_busqueda(mensaje_usuario)
-
-            # ✅ MODIFICADO: Usar nuevo sistema de ubicación
             ubicacion_real = self._obtener_ubicacion_busqueda(mensaje_usuario)
             print(f"📍 Buscando en: {ubicacion_real}")
 
-            # ✅ DECIDIR: ¿Búsqueda específica o exploración completa?
             if termino_busqueda:
                 print(f"🎯 EJECUTANDO BÚSQUEDA ESPECÍFICA: '{termino_busqueda}'")
                 resultado_herramienta = self.explorador_archivos.obtener_estructura_carpetas(
@@ -437,7 +342,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
                 resultado_herramienta = self._ejecutar_explorador_completo(mensaje_usuario, profundidad)
                 tipo_busqueda = "EXPLORACIÓN COMPLETA"
 
-            # ✅ NUEVO: Contexto EXPLÍCITO para la IA sobre la ubicación REAL
             contexto_herramienta = f"""
 
     INFORMACIÓN DEL SISTEMA ({tipo_busqueda}):
@@ -465,11 +369,9 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
     RESPUESTA BASADA EN LOS DATOS DE {ubicacion_real.upper()}:
     """
         else:
-            # ✅ NUEVO: Modo Normal - NO usar explorador de archivos
             print("💬 Modo Normal - Sin exploración de archivos")
             contexto_herramienta = ""
 
-        # PREPARAR PROMPT FINAL
         personalidades = self.config_manager.obtener_personalidades()
         timeout = self.config_manager.obtener_modelos_compatibles().get(modelo_actual, {}).get("timeout", 300)
 
@@ -513,7 +415,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
 
                 if respuesta:
                     print(f"✅ Respuesta en {elapsed_time:.1f}s")
-                    # Añadir indicador contextual
                     if usar_herramienta:
                         modo = "MANUAL" if self.contexto_conversacion.get('ubicacion_manual') else "AUTOMÁTICO"
                         if termino_busqueda:
@@ -534,7 +435,6 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         except Exception as e:
             return f"❌ Error: {str(e)}"
 
-    # ✅ MODIFICADO: Método para activar explorador con ubicación manual
     def activar_explorador_archivos(self, mensaje_usuario, profundidad=2, ubicacion_manual=None):
         """Activa manualmente el explorador de archivos"""
         print(f"🔧 Activación manual del explorador - Profundidad: {profundidad}")
@@ -553,14 +453,12 @@ RESPUESTA BASADA EN LAS MÉTRICAS ACTUALES:
         if nuevo_modelo not in modelos_compatibles:
             return f"❌ Modelo no compatible", "error"
 
-        # Verificar si ya está instalado
         if self.gestor_modelos.verificar_modelo_instalado(nuevo_modelo):
             self.config["ollama_model"] = nuevo_modelo
             self.config_manager.guardar_configuracion()
             velocidad = modelos_compatibles[nuevo_modelo]["timeout"]
             return f"✅ Cambiado a {nuevo_modelo} (⏱️ {velocidad}s)", "success"
 
-        # Iniciar descarga
         self.descarga_activa = True
 
         def on_progreso(mensaje, tipo):
