@@ -5,209 +5,266 @@ import threading
 
 
 def construir_interfaz(asistente):
-    """Construye la interfaz con control de profundidad"""
+    """Construye la nueva interfaz con 3 columnas"""
 
-    with gr.Blocks(theme=gr.themes.Soft(), title="🧠 Asistente IA ULTRA RÁPIDO") as demo:
-        gr.Markdown("# 🧠 Asistente IA - 💭 VERSIÓN COMPLETA")
-        gr.Markdown("**Sin límites - Respuestas completas y detalladas**")
+    with gr.Blocks(theme=gr.themes.Soft(), title="🧠 Asistente IA") as demo:
+        # TÍTULO PRINCIPAL
+        gr.Markdown("# 🧠 Asistente IA")
 
         with gr.Row():
-            # COLUMNA IZQUIERDA - CONFIGURACIÓN
-            with gr.Column(scale=1):
-                gr.Markdown("### ⚙️ CONFIGURACIÓN RÁPIDA")
+            # ============================================================
+            # COLUMNA IZQUIERDA - AYUDA AL USUARIO
+            # ============================================================
+            with gr.Column(scale=1, min_width=300):
+                gr.Markdown("### 💡 Ayuda para el usuario")
 
-                # Modelo actual
-                modelo_actual = gr.Textbox(
-                    value=f"{asistente.config['ollama_model']} - 💭 COMPLETO",
-                    label="Modelo actual",
-                    interactive=False
+                with gr.Accordion("📋 Cómo usar la interfaz", open=True):
+                    gr.Markdown("""
+                    **Modos de operación:**
+                    - **Normal**: Respuestas estándar de IA
+                    - **Archivos**: Analiza tu sistema de archivos  
+                    - **Rendimiento**: Métricas del sistema en tiempo real
+
+                    **Controles de voz:**
+                    - 🎤 Usar micrófono para dictar mensajes
+                    - 🔊 Activar/desactivar voz de la IA
+
+                    **Búsqueda avanzada:**
+                    - Selecciona ubicación específica para búsquedas
+                    - Controla la profundidad de exploración
+                    """)
+
+                # Terminal/output del sistema
+                with gr.Accordion("📟 Terminal del sistema", open=False):
+                    terminal_output = gr.Textbox(
+                        label="Logs del sistema",
+                        lines=8,
+                        max_lines=12,
+                        interactive=False,
+                        value="✅ Sistema iniciado correctamente\n💬 Esperando tu mensaje..."
+                    )
+
+            # ============================================================
+            # COLUMNA CENTRAL - CHAT PRINCIPAL (PROTAGONISTA)
+            # ============================================================
+            with gr.Column(scale=2, min_width=500):
+                # CHATBOT - ÁREA PRINCIPAL
+                chatbot = gr.Chatbot(
+                    label="💬 Conversación",
+                    height=450,
+                    show_copy_button=True,
+                    show_share_button=True,
+                    avatar_images=(
+                        "https://em-content.zobj.net/source/microsoft/319/robot_1f916.png",
+                        "https://em-content.zobj.net/source/microsoft/319/brain_1f9e0.png"
+                    )
                 )
 
-                # Selector simple de modelos
-                selector_modelos = gr.Dropdown(
-                    choices=list(asistente.obtener_modelos_compatibles().keys()),
-                    value=asistente.config["ollama_model"],
-                    label="Cambiar modelo",
-                    info="Todos los modelos = Respuestas completas"
-                )
+                # SECCIÓN INFERIOR - CONTROLES DE CHAT
+                with gr.Row():
+                    with gr.Column(scale=4):
+                        txt_mensaje = gr.Textbox(
+                            placeholder="Escribe tu mensaje aquí...",
+                            label="",
+                            show_label=False,
+                            container=False
+                        )
 
-                btn_aplicar_modelo = gr.Button("⚡ APLICAR MODELO", variant="primary")
+                    with gr.Column(scale=1):
+                        btn_enviar = gr.Button("🚀 Enviar", variant="primary", size="lg")
 
-                estado_modelo = gr.Textbox(
-                    value="✅ LISTO" if asistente.verificar_modelo_instalado(
-                        asistente.config["ollama_model"]) else "❌ NO INSTALADO",
-                    label="Estado",
-                    interactive=False
-                )
+                # BOTONES INFERIORES
+                with gr.Row():
+                    btn_limpiar_chat = gr.Button("🧹 Limpiar chat", size="sm")
+                    btn_usar_microfono = gr.Button("🎤 Usar micrófono", size="sm")
+                    gr.HTML("<div style='flex-grow: 1'></div>")  # Espacio flexible
+                    estado_progreso = gr.Textbox(
+                        label="",
+                        value="✅ Listo",
+                        interactive=False,
+                        show_label=False,
+                        scale=2
+                    )
 
-                progreso_descarga = gr.Textbox(
-                    label="Progreso",
-                    interactive=False,
-                    value="⚡ Listo para chat rápido"
-                )
+            # ============================================================
+            # COLUMNA DERECHA - CONFIGURACIÓN AVANZADA
+            # ============================================================
+            with gr.Column(scale=1, min_width=300):
+                gr.Markdown("### ⚙️ Configuración")
 
-                # Personalidad rápida
-                personalidad_dropdown = gr.Dropdown(
-                    choices=list(asistente.obtener_personalidades().keys()),
-                    value=asistente.personalidad_actual,
-                    label="Modo de respuesta",
-                    info="Ambos modos = Respuestas sin límites"
-                )
+                # SECCIÓN SUPERIOR - CONTROLES BÁSICOS
+                with gr.Row():
+                    tipo_ayuda_dropdown = gr.Dropdown(
+                        choices=["Normal", "Archivos del sistema", "Rendimiento del sistema"],
+                        value="Normal",
+                        label="Tipo de ayuda",
+                        scale=2
+                    )
 
-                # ✅ NUEVO: SELECTOR DE UBICACIÓN MANUAL
-                ubicacion_manual = gr.Dropdown(
-                    choices=["automático", "usuario", "escritorio", "documentos",
-                            "descargas", "imágenes", "música", "vídeos"],
-                    value="automático",
-                    label="📍 Ubicación de búsqueda",
-                    info="Dónde buscará la IA (manual anula automático)"
-                )
+                    personalidad_dropdown = gr.Dropdown(
+                        choices=list(asistente.obtener_personalidades().keys()),
+                        value=asistente.personalidad_actual,
+                        label="Personalidad",
+                        scale=2
+                    )
 
-                # ✅ NUEVO: CONTROL DE PROFUNDIDAD DE BÚSQUEDA
-                profundidad_busqueda = gr.Slider(
-                    minimum=0,
-                    maximum=5,
-                    value=2,  # Valor por defecto
-                    step=1,
-                    label="🔍 Profundidad de búsqueda",
-                    info="Niveles de subcarpetas a explorar"
-                )
-
-                # ✅ MODIFICADO: Selector de Tipo de Ayuda (AHORA CON 3 OPCIONES)
-                tipo_ayuda_dropdown = gr.Dropdown(
-                    choices=["Normal", "Archivos del sistema", "Rendimiento del sistema"],  # ✅ AÑADIDO
-                    value="Normal",
-                    label="🔧 Tipo de Ayuda",
-                    info="Selecciona el modo de respuesta"
-                )
-
-                # Controles simples
+                # CONTROLES DE AUDIO EN LÍNEA
                 with gr.Row():
                     btn_toggle_voz = gr.Button("🔊 Voz", size="sm")
                     btn_toggle_mic = gr.Button("🎤 Mic", size="sm")
-
-                estado_controles = gr.Textbox(
-                    value=f"Voz: {'🔊' if asistente.voz_activada else '🔇'} | Mic: {'🎤' if asistente.microfono_activado else '🚫'}",
-                    label="Controles",
-                    interactive=False
-                )
-
-                btn_cerrar = gr.Button("🛑 Cerrar", variant="stop")
-
-            # COLUMNA DERECHA - CHAT
-            with gr.Column(scale=2):
-                chatbot = gr.Chatbot(
-                    label="💬 CHAT RÁPIDO",
-                    height=400,
-                    show_copy_button=True
-                )
-
-                with gr.Row():
-                    txt_mensaje = gr.Textbox(
-                        placeholder="Escribe tu mensaje... (respuesta completa sin límites)",
-                        label="Mensaje completo",
-                        scale=4
+                    estado_audio = gr.Textbox(
+                        value=f"{'🔊' if asistente.voz_activada else '🔇'} {'🎤' if asistente.microfono_activado else '🚫'}",
+                        label="",
+                        interactive=False,
+                        show_label=False,
+                        max_lines=1,
+                        scale=1
                     )
-                    btn_enviar = gr.Button("⚡ Enviar", variant="primary", scale=1)
 
-                with gr.Row():
-                    btn_limpiar = gr.Button("🗑️ Limpiar")
-                    btn_microfono = gr.Button("🎤 Voz")
+                # AJUSTES AVANZADOS (Acordeón)
+                with gr.Accordion("🔧 Ajustes avanzados", open=True):
+                    # Selector de modelo
+                    selector_modelos = gr.Dropdown(
+                        choices=list(asistente.obtener_modelos_compatibles().keys()),
+                        value=asistente.config["ollama_model"],
+                        label="Modelo de IA",
+                        info="Selecciona el modelo a utilizar"
+                    )
 
-        # ==================== EVENT HANDLERS RÁPIDOS ====================
+                    btn_aplicar_modelo = gr.Button("🔄 Aplicar modelo", variant="secondary")
+
+                    estado_modelo = gr.Textbox(
+                        value="✅ LISTO" if asistente.verificar_modelo_instalado(
+                            asistente.config["ollama_model"]) else "❌ NO INSTALADO",
+                        label="Estado del modelo",
+                        interactive=False
+                    )
+
+                    # Configuración de búsqueda
+                    ubicacion_manual = gr.Dropdown(
+                        choices=["automático", "usuario", "escritorio", "documentos",
+                                 "descargas", "imágenes", "música", "vídeos"],
+                        value="automático",
+                        label="📍 Ubicación de búsqueda",
+                        info="Dónde buscará la IA"
+                    )
+
+                    profundidad_busqueda = gr.Slider(
+                        minimum=0,
+                        maximum=5,
+                        value=2,
+                        step=1,
+                        label="🔍 Profundidad de búsqueda",
+                        info="Niveles de subcarpetas a explorar (0-5)"
+                    )
+
+                # BOTÓN DE CERRADO
+                btn_cerrar = gr.Button("🛑 Cerrar aplicación", variant="stop")
+
+        # ==================== EVENT HANDLERS ====================
 
         def enviar_mensaje(mensaje, historial, tipo_ayuda, profundidad, ubicacion):
+            """Maneja el envío de mensajes"""
             if not mensaje.strip():
-                return "", historial
+                return "", historial, "✏️ Escribe un mensaje..."
 
             historial.append([mensaje, "⏳ Procesando..."])
 
-            # ✅ MODIFICADO: Lógica expandida para 3 modos
+            # Actualizar estado
+            estado = "🔄 Procesando tu mensaje..."
+
+            # Lógica de modos
             if tipo_ayuda == "Archivos del sistema":
                 print("🔧 Modo: Archivos del sistema - Activando explorador...")
                 respuesta = asistente.activar_explorador_archivos(mensaje, profundidad, ubicacion)
-            elif tipo_ayuda == "Rendimiento del sistema":  # ✅ NUEVO MODO
+            elif tipo_ayuda == "Rendimiento del sistema":
                 print("📊 Modo: Rendimiento - Obteniendo métricas del sistema...")
-                respuesta = asistente.obtener_rendimiento_sistema(mensaje)  # ✅ NUEVO MÉTODO
-            else:  # Modo Normal
-                print("💬 Modo: Normal - Respuesta estándar sin explorador")
-                # ✅ IMPORTANTE: NO pasar forzar_explorador=True en modo Normal
+                respuesta = asistente.obtener_rendimiento_sistema(mensaje)
+            else:
+                print("💬 Modo: Normal - Respuesta estándar")
                 respuesta = asistente.generar_respuesta_ollama(mensaje, forzar_explorador=False)
 
             historial[-1] = [mensaje, respuesta]
-            return "", historial
+            return "", historial, "✅ Listo"
 
-        # Actualizar los handlers para incluir profundidad y ubicación
+        # Handler para enviar mensaje
         btn_enviar.click(
             enviar_mensaje,
             [txt_mensaje, chatbot, tipo_ayuda_dropdown, profundidad_busqueda, ubicacion_manual],
-            [txt_mensaje, chatbot]
+            [txt_mensaje, chatbot, estado_progreso]
         )
 
         txt_mensaje.submit(
             enviar_mensaje,
             [txt_mensaje, chatbot, tipo_ayuda_dropdown, profundidad_busqueda, ubicacion_manual],
-            [txt_mensaje, chatbot]
+            [txt_mensaje, chatbot, estado_progreso]
         )
 
         # Limpiar chat
-        btn_limpiar.click(lambda: [], outputs=[chatbot])
+        def limpiar_chat():
+            return [], "💬 Chat limpiado"
+
+        btn_limpiar_chat.click(
+            limpiar_chat,
+            outputs=[chatbot, estado_progreso]
+        )
 
         # Microfono
         def escuchar_voz():
             if not asistente.microfono_activado:
-                return "🚫 Mic desactivado"
+                return "🚫 Mic desactivado", "🔇 Micrófono desactivado"
             try:
                 r = sr.Recognizer()
                 with sr.Microphone() as source:
                     audio = r.listen(source, timeout=5)
-                return r.recognize_google(audio, language="es-ES")
+                texto = r.recognize_google(audio, language="es-ES")
+                return texto, "🎤 Voz detectada"
+            except sr.WaitTimeoutError:
+                return "❌ No se detectó voz", "⏰ Tiempo agotado"
             except:
-                return "❌ No se detectó voz"
+                return "❌ Error de reconocimiento", "❌ Error de audio"
 
-        btn_microfono.click(escuchar_voz, outputs=[txt_mensaje])
+        btn_usar_microfono.click(
+            escuchar_voz,
+            outputs=[txt_mensaje, estado_progreso]
+        )
 
-        # Controles
+        # Controles de audio
         def toggle_voz_handler():
             estado, mensaje = asistente.toggle_voz()
-            return mensaje
+            icono = "🔊" if asistente.voz_activada else "🔇"
+            estado_actual = f"{icono} {'🎤' if asistente.microfono_activado else '🚫'}"
+            return estado_actual, mensaje
 
-        btn_toggle_voz.click(toggle_voz_handler, outputs=[estado_controles])
+        btn_toggle_voz.click(
+            toggle_voz_handler,
+            outputs=[estado_audio, estado_progreso]
+        )
 
         def toggle_mic_handler():
             estado, mensaje = asistente.toggle_microfono()
-            return mensaje
+            icono = "🎤" if asistente.microfono_activado else "🚫"
+            estado_actual = f"{'🔊' if asistente.voz_activada else '🔇'} {icono}"
+            return estado_actual, mensaje
 
-        btn_toggle_mic.click(toggle_mic_handler, outputs=[estado_controles])
+        btn_toggle_mic.click(
+            toggle_mic_handler,
+            outputs=[estado_audio, estado_progreso]
+        )
 
-        # ✅ MODIFICADO: Cambiar tipo de ayuda - Handler expandido
+        # Cambiar tipo de ayuda
         def cambiar_tipo_ayuda(tipo_seleccionado):
-            """Actualiza el estado según el tipo de ayuda seleccionado"""
             if tipo_seleccionado == "Archivos del sistema":
-                return "🔧 Modo: Archivos del sistema - La IA analizará tu sistema de archivos"
-            elif tipo_seleccionado == "Rendimiento del sistema":  # ✅ NUEVO
-                return "📊 Modo: Rendimiento - La IA analizará el rendimiento del sistema en tiempo real"
+                return "🔧 Modo: Archivos del sistema activado"
+            elif tipo_seleccionado == "Rendimiento del sistema":
+                return "📊 Modo: Rendimiento activado"
             else:
-                return "🔧 Modo: Normal - Respuesta estándar"
+                return "💬 Modo: Normal activado"
 
         tipo_ayuda_dropdown.change(
             cambiar_tipo_ayuda,
             [tipo_ayuda_dropdown],
-            [progreso_descarga]
-        )
-
-        # ✅ NUEVO: Handler para cambio de ubicación manual
-        def cambiar_ubicacion_manual(ubicacion):
-            """Actualiza el estado cuando cambia la ubicación manual"""
-            if ubicacion == "automático":
-                return f"📍 Ubicación: Automático (IA decide)"
-            else:
-                return f"📍 Ubicación: {ubicacion.title()} (Manual)"
-
-        ubicacion_manual.change(
-            cambiar_ubicacion_manual,
-            [ubicacion_manual],
-            [progreso_descarga]
+            [estado_progreso]
         )
 
         # Cambiar personalidad
@@ -215,41 +272,53 @@ def construir_interfaz(asistente):
             asistente.personalidad_actual = nueva
             asistente.config["personalidad_actual"] = nueva
             asistente.config_manager.guardar_configuracion()
-            return f"✅ Modo: {nueva}"
+            return f"✅ Personalidad: {nueva}"
 
         personalidad_dropdown.change(
             cambiar_personalidad,
             [personalidad_dropdown],
-            [estado_controles]
+            [estado_progreso]
+        )
+
+        # Cambiar ubicación
+        def cambiar_ubicacion_manual(ubicacion):
+            if ubicacion == "automático":
+                return "📍 Ubicación: Automático"
+            else:
+                return f"📍 Ubicación: {ubicacion.title()}"
+
+        ubicacion_manual.change(
+            cambiar_ubicacion_manual,
+            [ubicacion_manual],
+            [estado_progreso]
         )
 
         # Cambiar modelo
         def cambiar_modelo_handler(modelo_seleccionado):
             if not modelo_seleccionado:
-                return "❌ Selecciona modelo", asistente.config["ollama_model"], "Listo"
+                return "❌ Selecciona un modelo", asistente.config["ollama_model"], "❌ Error"
 
             resultado, tipo = asistente.cambiar_modelo(modelo_seleccionado)
 
-            # Actualizar UI
             time.sleep(1)
             if tipo == "success":
                 nuevo_estado = "✅ LISTO"
-                modelo_display = f"{modelo_seleccionado} - ⚡ RÁPIDO"
+                mensaje_estado = f"✅ Modelo cambiado a {modelo_seleccionado}"
             else:
                 nuevo_estado = "📥 DESCARGANDO..." if tipo == "download" else "❌ ERROR"
-                modelo_display = asistente.config["ollama_model"]
+                mensaje_estado = resultado
 
-            return resultado, modelo_display, nuevo_estado
+            return resultado, modelo_seleccionado, nuevo_estado, mensaje_estado
 
         btn_aplicar_modelo.click(
             cambiar_modelo_handler,
             [selector_modelos],
-            [progreso_descarga, modelo_actual, estado_modelo]
+            [estado_modelo, selector_modelos, estado_modelo, estado_progreso]
         )
 
         # Cerrar aplicación
         def cerrar_app():
-            print("🛑 Cerrando aplicación rápida...")
+            print("🛑 Cerrando aplicación...")
             asistente.app_cerrando = True
             asistente.silenciar_voz_actual()
             asistente.config_manager.guardar_configuracion()
@@ -262,6 +331,6 @@ def construir_interfaz(asistente):
             threading.Thread(target=cerrar_forzado, daemon=True).start()
             return "🛑 Cerrando..."
 
-        btn_cerrar.click(cerrar_app, outputs=[progreso_descarga])
+        btn_cerrar.click(cerrar_app, outputs=[estado_progreso])
 
     return demo
